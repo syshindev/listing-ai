@@ -1,6 +1,6 @@
-# JINDO
+# <img src="assets/favicon.svg" width="40" align="center" alt="JINDO logo"/> JINDO — AI Listing Generator for Secondhand Marketplaces
 
-AI-powered listing generator for secondhand marketplaces. Upload photos of an item and receive a complete, ready-to-post Korean listing (title, description, price range, tags) in seconds.
+Upload photos of an item and receive a complete, ready-to-post Korean listing (title, description, price range, tags) in seconds.
 
 Targeted at the Korean community in Vancouver — UvanU, VanJoseon, HelloVancouver and similar Korean-language marketplaces.
 
