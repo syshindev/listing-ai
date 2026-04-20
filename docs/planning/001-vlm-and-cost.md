@@ -193,15 +193,182 @@ Breakeven: **3× Pro subscribers at $4.99/mo** covers the first month's total AI
 
 ## 3. Technical Stack Details
 
-*In progress — next section to fill in.*
+### Package Manager
 
-Topics to cover:
-- Package manager (pnpm recommended)
-- Image storage: Vercel Blob vs Supabase Storage (avoid dual storage layers)
-- Supabase schema (users, listings, usage_counts, ai_calls)
-- Folder structure (`src/`, feature-based organization)
-- Auth: Supabase Auth with email + Google OAuth
-- Validation and environment management (Zod, T3 env schema)
+**pnpm** — fastest install, strict dependency resolution, disk-efficient via content-addressable store. Vercel's recommended default.
+
+### Image Storage
+
+**Supabase Storage** (not Vercel Blob or Cloudflare R2).
+
+Rationale:
+- Same project as Postgres + Auth → Row-Level Security references `auth.uid()` directly on storage paths
+- One vendor invoice instead of three once we hit paid tiers
+- Free tier (1GB) comfortably covers MVP (~3,000 photos at 300KB each)
+- Built-in image transform API for resizing and WebP conversion
+
+Trade-off: Cloudflare R2 would be cheaper at scale (free egress), but its infrastructure overhead isn't worth it for current traffic expectations. Revisit if storage egress cost becomes material.
+
+### Folder Structure
+
+**`src/` + feature-based**:
+
+```
+src/
+├── app/              # Next.js App Router — thin routing only
+├── features/
+│   ├── listing/      # AI listing generation (self-contained)
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── actions.ts
+│   │   └── schemas.ts
+│   ├── auth/
+│   ├── billing/
+│   └── usage-limit/
+├── components/ui/    # Reusable shadcn/ui primitives
+├── lib/              # Domain-neutral helpers (db client, AI SDK setup, utils)
+├── env.ts            # Typed environment schema
+└── types/
+```
+
+Rule: code used by a single feature lives under `features/<name>/`. Code shared across two or more features graduates to `lib/`.
+
+Rationale:
+- One feature = one folder → cognitive load for adding or removing a feature is minimal
+- Portfolio signal: type-based (`components/`, `hooks/`, `lib/`) spreads one feature across multiple top-level directories; feature-based reads as production-scale thinking
+- Scales naturally as the 4-week roadmap adds `auth`, `billing`, `usage-limit` as new feature modules
+
+### Supabase Schema
+
+Five tables, all in the `public` schema. `auth.users` is managed by Supabase Auth.
+
+```sql
+profiles
+├── id (uuid, PK, FK → auth.users.id)
+├── email (text)
+├── plan (enum: 'free' | 'pro')
+├── created_at, updated_at
+
+listings
+├── id (uuid, PK)
+├── user_id (uuid, FK → profiles.id, NOT NULL)
+├── title (text)
+├── description (text)
+├── price_min, price_max, price_suggested (int)   -- CAD
+├── price_reasoning (text)
+├── tags (text[])
+├── image_urls (text[])
+├── model_used (text)              -- 'gemini-3-flash' etc.
+├── is_edited (bool)               -- true after user edits the AI output
+├── created_at, updated_at
+
+ai_calls
+├── id (uuid, PK)
+├── user_id (uuid, FK, NOT NULL)
+├── listing_id (uuid, FK, nullable)
+├── model (text)
+├── input_tokens, output_tokens (int)
+├── cost_cad (numeric(10, 6))
+├── latency_ms (int)
+├── status (enum: 'success' | 'error')
+├── error_message (text, nullable)
+├── created_at
+
+usage_counts
+├── id (uuid, PK)
+├── user_id (uuid, FK, NOT NULL)
+├── period_start (date)            -- first day of month
+├── count (int)
+├── UNIQUE (user_id, period_start)
+├── created_at, updated_at
+
+subscriptions
+├── id (uuid, PK)
+├── user_id (uuid, FK, NOT NULL)
+├── plan (enum: 'pro')
+├── status (enum: 'active' | 'cancelled' | 'expired')
+├── lemonsqueezy_subscription_id (text)
+├── current_period_end (timestamptz)
+├── created_at, updated_at
+```
+
+Design decisions:
+- **Two tiers only (free, pro)** — Plus dropped from original PROJECT_PLAN as over-scoped for expected usage. Adding Plus later is a one-line enum extension.
+- **`profiles.plan` duplicated from `subscriptions`** — hot-path tier checks avoid a join. A trigger keeps them in sync when `subscriptions` changes.
+- **Login required** — no anonymous usage tracking. All `user_id` columns are NOT NULL. Simpler RLS, less abuse surface.
+- **`ai_calls` table is append-only** — immutable cost observability log, deliberately separate from the mutable `listings` table.
+- **`usage_counts` aggregates by month** — O(1) rate-limit check rather than counting rows in `listings`.
+- **`cost_cad` stored per call** — pins FX-rate-at-time-of-call so historical cost reports stay accurate despite exchange rate drift.
+
+Row-Level Security: every user-owned table uses `auth.uid() = user_id` policies. `ai_calls` is read-only for owners; writes happen through a Server Action running as the service role.
+
+### Authentication
+
+**Email/password + Google OAuth**, both via Supabase Auth.
+
+Routes:
+- `/auth/login` — email+password and Google button
+- `/auth/signup` — email+password and Google button
+- `/auth/forgot-password` — password reset via email link
+- `/auth/reset-password` — consumes the reset link
+- `/auth/verify-email` — consumes the email verification link
+
+Middleware gates protected routes (`/create`, `/result/[id]`, anything under `/app`).
+
+Rationale for supporting both: email/password gives portfolio depth (hashing, reset flow, verification) at near-zero additional cost since Supabase handles the hard parts. Google OAuth is the low-friction default for the Vancouver Korean community (Gmail penetration is very high).
+
+### Validation
+
+**Zod** throughout — form input, Server Action payloads, AI response parsing, environment schema.
+
+Integrates with:
+- `react-hook-form` via `@hookform/resolvers/zod`
+- `@t3-oss/env-nextjs` for typed env
+- AI SDK `generateObject({ schema: ... })` for VLM structured output
+
+### Environment Variables
+
+**`@t3-oss/env-nextjs`** with a Zod schema at `src/env.ts`. Catches missing or malformed env vars at build time, separates server vs client env, and provides full TypeScript inference on `env.X` usage.
+
+### Rate Limiting
+
+**Supabase DB using the `usage_counts` table.** Implementation:
+
+```typescript
+// Pseudocode for the rate-limit check (runs server-side before any AI call)
+const { count } = await supabase
+  .from('usage_counts')
+  .select('count')
+  .eq('user_id', userId)
+  .eq('period_start', currentMonth)
+  .single();
+
+if (profile.plan === 'free' && count >= 5) {
+  throw new Error('Monthly limit reached');
+}
+// After success, UPSERT increment count
+```
+
+Rationale:
+- One less external service (no Upstash Redis bill or dashboard to manage)
+- JINDO's traffic profile (low frequency, low concurrency) doesn't need sub-millisecond rate-limit latency
+- DB transactions handle the race condition
+- Documentable as an ADR: a DIY rate limiter shows engineering judgment more than dropping in an SDK
+
+Scale trigger: if per-user concurrency or total RPS grows past a few hundred per second, swap to Upstash via the same function signature.
+
+### Summary of Section 3 Decisions
+
+| Area | Choice |
+|---|---|
+| Package manager | pnpm |
+| Image storage | Supabase Storage |
+| Folder structure | `src/` + feature-based |
+| Schema | 5 tables; login required; free + pro tiers |
+| Auth | Email/password + Google OAuth (both) |
+| Validation | Zod |
+| Env management | `@t3-oss/env-nextjs` |
+| Rate limiting | Supabase DB (`usage_counts`) |
 
 ## 4. Week 1 — File-Level Task List
 
