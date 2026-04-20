@@ -4,6 +4,12 @@ Upload photos of an item and receive a complete, ready-to-post Korean listing (t
 
 Targeted at the Korean community in Vancouver — UvanU, VanJoseon, HelloVancouver and similar Korean-language marketplaces.
 
+## Why
+
+I sell things on Vancouver's Korean community marketplaces (UvanU, VanJoseon, HelloVancouver) and writing listings is the slowest part — especially when clearing out a bunch of items during a move. JINDO is the tool I wanted to exist.
+
+It ships as a full freemium SaaS (auth, payments, monitoring) rather than a localhost demo because the engineering value of running a live product — and the chance that a few Korean immigrants actually use it — is worth more than a prototype.
+
 ## Status
 
 Early planning. Implementation has not started yet.
