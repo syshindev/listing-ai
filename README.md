@@ -12,7 +12,7 @@ It ships as a full freemium SaaS (auth, payments, monitoring) rather than a loca
 
 ## Status
 
-Early planning. Implementation has not started yet.
+Week 1 in progress — repo scaffolded (Next.js 16 + Tailwind v4), architecture locked in, deployment pipeline pending.
 
 ## Documentation
 
@@ -24,8 +24,8 @@ Start with [`docs/planning/001-vlm-and-cost.md`](./docs/planning/001-vlm-and-cos
 
 ## Planned Stack
 
-- **Framework**: Next.js 15 (App Router) + TypeScript
-- **Styling**: Tailwind CSS + shadcn/ui
+- **Framework**: Next.js 16 (App Router) + TypeScript
+- **Styling**: Tailwind CSS v4 + shadcn/ui
 - **AI**: Vercel AI SDK — Gemini 3 Flash (free tier) / Claude Haiku 4.5 (Pro tier)
 - **Backend**: Supabase (Postgres, Auth)
 - **Hosting**: Vercel
