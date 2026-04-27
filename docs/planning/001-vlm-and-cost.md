@@ -374,6 +374,8 @@ Scale trigger: if per-user concurrency or total RPS grows past a few hundred per
 
 Goal by end of Week 1: a deployed, empty-but-navigable JINDO shell on Vercel with Supabase connected, auth wired (no real flows yet), and folder structure in place. AI features are deferred to Week 2.
 
+**Progress (last updated 2026-04-27)**: 4.1 → 4.6 (partial) complete. Remaining: Google OAuth, Supabase client wiring, middleware, Vercel deployment, verification.
+
 ### 4.1 Next.js Foundation (local)
 
 ```bash
@@ -384,9 +386,14 @@ pnpm create next-app@latest . \
   --no-eslint  # linter config added deliberately later (Biome or ESLint)
 ```
 
-- [ ] Scaffold runs successfully; `pnpm dev` shows Next.js welcome page at `http://localhost:3000`
-- [ ] Verify directory: `src/app/layout.tsx`, `src/app/page.tsx`, `tsconfig.json`, `tailwind.config.ts` exist
-- [ ] Delete boilerplate content from `src/app/page.tsx` (keep the file, empty component)
+- [x] Scaffold runs successfully; `pnpm dev` shows Next.js welcome page at `http://localhost:3000`
+- [x] Verify directory: `src/app/layout.tsx`, `src/app/page.tsx`, `tsconfig.json` exist (note: Tailwind v4 is zero-config, so `tailwind.config.ts` is not generated)
+- [x] `src/app/page.tsx` deleted entirely; replaced by `src/app/(marketing)/page.tsx` route group during 4.4
+
+Notes from execution:
+- Installed Next.js 16.2.4 (latest), not Next.js 15 — README updated accordingly.
+- Auto-generated `AGENTS.md` and `CLAUDE.md` files removed — not used by the app.
+- `pnpm-workspace.yaml` retained (pnpm 10+ requires explicit approval for native-build deps like `sharp`).
 
 ### 4.2 Core Dependencies
 
@@ -399,25 +406,31 @@ pnpm add lucide-react class-variance-authority clsx tailwind-merge
 pnpm add -D @types/node
 ```
 
-- [ ] `package.json` reflects all of the above
-- [ ] `pnpm install` finishes without peer-dep warnings
+- [x] `package.json` reflects all of the above
+- [x] `pnpm install` finishes without peer-dep warnings
+
+Notes from execution: `lucide-react` removed afterwards because the chosen shadcn preset (Maia) bundles Hugeicons by default. Sticking with one icon library for consistency.
 
 ### 4.3 shadcn/ui Initialization
 
 ```bash
 pnpm dlx shadcn@latest init
-# Accept defaults; choose: Default style, Slate base color, src/components/ui
 ```
 
-- [ ] `components.json` exists at repo root
-- [ ] `src/components/ui/` directory created
-- [ ] `src/lib/utils.ts` has `cn()` helper
+Choices made: Radix primitives, **Maia** preset (radix-maia style, neutral base color, Hugeicons, Figtree font), App Router with RSC, TypeScript.
+
+- [x] `components.json` exists at repo root
+- [x] `src/components/ui/` directory created
+- [x] `src/lib/utils.ts` has `cn()` helper
 
 Install the core primitives used by the initial pages:
 
 ```bash
-pnpm dlx shadcn@latest add button input label form card toast
+pnpm dlx shadcn@latest add button input label card sonner
 ```
+
+- [x] `button.tsx`, `card.tsx`, `input.tsx`, `label.tsx`, `sonner.tsx` installed
+- [ ] `form.tsx` deferred — not present in the Maia registry; will be hand-built (or copied from official shadcn site) when auth forms are needed in Week 3.
 
 ### 4.4 Folder Structure — Feature-Based Skeleton
 
@@ -455,8 +468,12 @@ src/
 └── env.ts                     # t3-oss/env schema (next step)
 ```
 
-- [ ] All stub pages render "coming soon" placeholder text
-- [ ] Routing works: visiting `/create`, `/result/abc`, `/auth/login` returns valid pages (not 404)
+- [x] All stub pages render "coming soon" placeholder text
+- [x] Routing works: visiting `/create`, `/result/abc`, `/auth/login` returns valid pages (not 404)
+
+Notes from execution:
+- `src/app/page.tsx` was removed entirely; `src/app/(marketing)/page.tsx` route group serves `/` instead.
+- Default Next.js public SVGs (`file.svg`, `globe.svg`, etc.) deleted; `public/favicon.svg` set to the JINDO logo.
 
 ### 4.5 Environment Schema
 
@@ -488,8 +505,8 @@ export const env = createEnv({
 });
 ```
 
-- [ ] `.env.example` file committed with empty placeholders (no real keys)
-- [ ] `.env.local` created locally (gitignored already by default Next.js setup)
+- [x] `.env.example` file committed with empty placeholders (no real keys)
+- [x] `.env.local` created locally (gitignored already by default Next.js setup)
 
 ### 4.6 Supabase Project
 
@@ -497,10 +514,11 @@ On supabase.com:
 
 1. Create new project. Region: `us-west-1` (closest to Vancouver for latency)
 2. Set database password, save to password manager
-3. From project settings → API: copy
+3. From project settings → Data API: copy
    - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (server-side only!)
+   - `Publishable key` (formerly `anon`) → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `Secret key` (formerly `service_role`) → `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
+4. Security flags: Data API enabled, automatic RLS enabled, automatic exposure of new tables disabled.
 
 Run the schema in Supabase SQL editor:
 
@@ -601,11 +619,13 @@ create policy "users view own subscriptions" on subscriptions
   for select using (auth.uid() = user_id);
 ```
 
-- [ ] All 5 tables visible in Supabase Table Editor
-- [ ] RLS badge appears on each table (green shield icon)
+- [x] All 5 tables visible in Supabase Table Editor
+- [x] RLS badge appears on each table (green shield icon)
 
 Enable Google OAuth:
 - Supabase Authentication → Providers → Google → enable with OAuth client ID/secret from Google Cloud Console
+- [ ] Google Cloud Console OAuth client created
+- [ ] Provider toggled on in Supabase dashboard (deferrable to Week 3 when actual login UI is built)
 
 ### 4.7 Supabase Client Wiring
 
